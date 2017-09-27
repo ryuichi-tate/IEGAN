@@ -6,6 +6,7 @@ from PIL import Image
 from keras.models import Sequential
 from keras.optimizers import SGD, Adam
 from keras.callbacks import Callback, ModelCheckpoint
+from keras.utils import to_categorical
 import keras.backend as K
 import tensorflow as tf
 from model import *
@@ -32,9 +33,28 @@ def mean_quantile_js(y_true, y_pred):
     # self_true = pairwise_euclid(y_true)
     # self_pred = pairwise_euclid(y_pred)
 
+    # D_JS Estimator. but it doesn't work
+    # =====================================
     # loss = K.abs(K.log(K.sum(K.square(y_true - y_bar), axis=[1,2,3]) * K.sum(K.square(y_pred - y_bar), axis=[1,2,3])) -
     #     K.log(K.sum(self_true, axis=1) * K.sum(self_pred, axis=1)) * N / (N-1))
-    loss = K.abs(K.log(K.sum(K.square(y_true - y_bar), axis=[1,2,3]) * K.sum(K.square(y_pred - y_bar), axis=[1,2,3])))
+
+    # loss = K.abs(K.log(K.sum(
+    #     K.square(y_true - y_bar), axis=[1,2,3]) *
+    #     K.sum(K.square(y_pred - y_bar), axis=[1,2,3])) -
+    #     K.log(
+    #         K.sum(K.square( K.expand_dims(y_true, 1) -
+    #             K.expand_dims(y_true, 0)), axis=[1,2,3,4]) *
+    #         K.sum(K.square(K.expand_dims(y_pred, 1) -
+    #             K.expand_dims(y_pred, 0)), axis=[1,2,3,4])
+    #     ) * N / (N-1)
+    # )
+
+    # CE only.
+    # =====================================
+    # L2
+    # loss = K.log(K.sum(K.square(y_true - y_bar), axis=[1,2,3]) * K.sum(K.square(y_pred - y_bar), axis=[1,2,3]))
+    # L1
+    loss = K.log(K.sum(K.abs(y_true - y_bar), axis=[1,2,3]) * K.sum(K.abs(y_pred - y_bar), axis=[1,2,3]))
     return loss
 
 def custom_generator(X, num_batch):
@@ -42,13 +62,26 @@ def custom_generator(X, num_batch):
         for i in range(num_batch):
             last_index = min((i+1)*BATCH_SIZE, len(X))
             x = X[i*BATCH_SIZE:last_index]
-            yield (np.random.uniform(-1,1,(len(x), Z_dim)), x)
+            yield (np.random.normal(0,1,(len(x), Z_dim)), x)
+
+def custom_generator_categorical(X, Y, num_batch):
+    assert len(X) == len(Y)
+    while 1:
+        for i in range(num_batch):
+            last_index = min((i+1)*BATCH_SIZE, len(X))
+            x = X[i*BATCH_SIZE:last_index]
+            y = Y[i*BATCH_SIZE:last_index]
+            yield (np.append(np.random.normal(0,1,(len(x),Z_dim)), y, axis=1), x)
 
 def sampler_uniform(size=BATCH_SIZE):
     return np.random.uniform(-1, 1, (size, Z_dim))
 
 def sampler_normal(size=BATCH_SIZE):
     return np.random.normal(0, 1, (size, Z_dim))
+
+def sampler_normal_categorical(num_classes=10):
+    return np.append(np.random.normal(0,1,(num_classes**2, Z_dim)),
+            to_categorical(np.array([range(num_classes) for _ in range(num_classes)])), axis=1)
 
 class PredictionSaver(Callback):
     def __init__(self, g, sample):
@@ -69,6 +102,7 @@ def train():
 
     # load images
     (X_train, y_train), (_, _) = mnist.load_data()
+    num_classes = 10
     num_train = len(X_train)
     num_batch = int(num_train/BATCH_SIZE)
     print("# of samples: ", num_train)
@@ -77,43 +111,30 @@ def train():
     X_train = (X_train.astype(np.float32) - 127.5)/127.5
     X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
 
-    g = generator(input_dim=Z_dim)
-    opt= Adam(lr=LR,beta_1=B1)
+    y_train = to_categorical(y_train, num_classes)
+
+    # original
+    # g = generator(input_dim=Z_dim)
+    # categorical
+    g = generator(input_dim=Z_dim+num_classes)
+
+    opt= Adam()
+    # opt= Adam(lr=LR,beta_1=B1)
     g.compile(loss=mean_quantile_js, optimizer=opt)
 
-    z_pred = sampler_uniform(64)
+    z_pred = sampler_normal_categorical(num_classes)
+
     pred_saver = PredictionSaver(g, z_pred)
     checkpointer = ModelCheckpoint(
             filepath=os.path.join(GENERATED_MODEL_PATH, 'model.h5'),
             verbose=0)
 
-    g.fit_generator(custom_generator(X_train, num_batch),
+    g.fit_generator(custom_generator_categorical(X_train, y_train, num_batch),
             steps_per_epoch=num_batch,
             epochs=NUM_EPOCH,
             callbacks=[pred_saver, checkpointer])
 
-    # for epoch in list(map(lambda x: x+1,range(NUM_EPOCH))):
-    #     for index in range(num_batches):
-    #         X_d_true = X_train[index*BATCH_SIZE:(index+1)*BATCH_SIZE]
-    #         X_g = np.array([np.random.normal(0,0.5,Z_dim) for _ in range(BATCH_SIZE)])
-    #         X_d_gen = g.predict(X_g, verbose=0)
-    #
-    #         # train discriminator
-    #         d_loss = d.train_on_batch(X_d_true, y_d_true)
-    #         d_loss = d.train_on_batch(X_d_gen, y_d_gen)
-    #         # train generator
-    #         g_loss = dcgan.train_on_batch(X_g, y_g)
-    #         show_progress(epoch,index,g_loss[0],d_loss[0],g_loss[1],d_loss[1])
-    #
-    #     # save generated images
-    #     image = combine_images(g.predict(z_pred))
-    #     image = image*127.5 + 127.5
-    #     Image.fromarray(image.astype(np.uint8))\
-    #         .save(GENERATED_IMAGE_PATH+"%03depoch.png" % (epoch))
-    #     print()
-    #     # save models
-    #     g.save(GENERATED_MODEL_PATH+'dcgan_generator.h5')
-    #     d.save(GENERATED_MODEL_PATH+'dcgan_discriminator.h5')
+    K.clear_session()
 
 if __name__ == '__main__':
     train()
