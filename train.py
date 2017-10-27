@@ -10,7 +10,7 @@ from keras.utils import to_categorical
 import keras.backend as K
 import tensorflow as tf
 from model import *
-from visualizer import *
+from utils import *
 import better_exceptions
 
 BATCH_SIZE = 16
@@ -22,14 +22,13 @@ GENERATED_IMAGE_PATH = 'images/'
 GENERATED_MODEL_PATH = 'models/'
 
 def mean_quantile_js(y_true, y_pred):
-    def pairwise_euclid(T):
-        T1 = K.expand_dims(T, 1)
-        T2 = K.expand_dims(T, 0)
-        return K.sum(tf.squared_difference(T1, T2), [2,3,4])
+    # def pairwise_euclid(T):
+    #     T1 = K.expand_dims(T, 1)
+    #     T2 = K.expand_dims(T, 0)
+    #     return K.sum(tf.squared_difference(T1, T2), [2,3,4])
 
-    N = y_true.shape[0].value
+    # N = y_true.shape[0].value
     y_bar = (y_true + y_pred) / 2
-
     # self_true = pairwise_euclid(y_true)
     # self_pred = pairwise_euclid(y_pred)
 
@@ -52,10 +51,11 @@ def mean_quantile_js(y_true, y_pred):
     # CE only.
     # =====================================
     # L2
-    # loss = K.log(K.sum(K.square(y_true - y_bar), axis=[1,2,3]) * K.sum(K.square(y_pred - y_bar), axis=[1,2,3]))
+    ce = K.mean(K.log(K.clip(K.square(y_true - y_bar) * K.square(y_pred - y_bar), K.epsilon(), 100)))
     # L1
-    loss = K.log(K.sum(K.abs(y_true - y_bar), axis=[1,2,3]) * K.sum(K.abs(y_pred - y_bar), axis=[1,2,3]))
-    return loss
+    # ce = K.mean(K.log(K.clip(K.abs(y_true - y_bar) * K.abs(y_pred - y_bar), K.epsilon(), 100)))
+
+    return K.abs(ce)
 
 def custom_generator(X, num_batch):
     while 1:
@@ -101,8 +101,10 @@ def train():
         os.mkdir(GENERATED_MODEL_PATH)
 
     # load images
-    (X_train, y_train), (_, _) = mnist.load_data()
+    (X_train, y_train), (X_test, y_test) = mnist.load_data()
     num_classes = 10
+    X_train = np.concatenate((X_train, X_test), axis=0)
+    y_train = np.concatenate((y_train, y_test))
     num_train = len(X_train)
     num_batch = int(num_train/BATCH_SIZE)
     print("# of samples: ", num_train)
