@@ -111,7 +111,7 @@ def train():
     # ==========================
     kwargs = dict(num_workers=1, pin_memory=True) if cuda else {}
     dataloader = DataLoader(
-        datasets.MNIST('mnist', download=True,
+        datasets.MNIST('MNIST', download=True,
                        transform=transforms.Compose([
                            transforms.Scale(32),
                            transforms.ToTensor(),
