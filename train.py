@@ -1,27 +1,15 @@
 # coding: utf-8
 import os
 import argparse
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import torchvision.utils as vutils
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
-from torch.autograd import Variable
-from model import Generator
-from utils import *
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                     help='input batch size for training (default: 32)')
 parser.add_argument('-e', '--epochs', type=int, default=100, metavar='E',
                     help='# of epochs to train (default: 100)')
-# parser.add_argument('--lr', type=float, default=2e-4, metavar='LR',
-#                     help='learning rate for Generator (default: 2e-4)')
-# parser.add_argument('--b1', type=float, default=.9, metavar='B1',
-#                     help='Adam momentum for Generator(default: 0.9)')
+parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+                    help='learning rate (default: 0.001)')
+parser.add_argument('--decay', type=float, default=0, metavar='D',
+                    help='weight decay or L2 penalty (default: 0)')
 parser.add_argument('-z', '--zdim', type=int, default=100, metavar='Z',
                     help='dimension of latent vector (default: 0.5)')
 parser.add_argument('--name', type=str, default='', metavar='NAME',
@@ -40,38 +28,23 @@ opt.name = opt.name if opt.name == '' else '_'+opt.name
 IMAGE_PATH = 'images'+opt.name
 MODEL_PATH = 'models'+opt.name
 
-BS = 32
 cuda = 1
-decay = 0
+
+# ===============
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torchvision.utils as vutils
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+from torch.autograd import Variable
+from model import Generator
+from utils import *
 
 # custom loss function
 # ==========================
-def self_distance(x, eps=1e-6):
-    # mat = x.view(x.size(0),-1)
-    mat = x
-    r = torch.mm(mat, mat.t())
-    diag = r.diag().unsqueeze(0)
-    diag = diag.expand_as(r)
-    dist = diag + diag.t() - 2*r + eps
-    return dist.sqrt().sum(1)
-
-def pairwise_distance(x1, x2, p=2, eps=1e-6):
-    diff = torch.abs(x1 - x2)
-    out = torch.pow(diff + eps, p).view(x1.size(0), -1).sum(dim=1, keepdim=True)
-    return torch.pow(out, 1. / p)
-
-def mqjs(input, target, eps=1e-6):
-    # assert input.size() == target.size()
-    n = input.size()[0]
-    x1 = input.view(n, -1)
-    x2 = target.view(n, -1)
-    p_ = (x1 + x2) / 2
-    ce = (torch.log(torch.clamp(F.pairwise_distance(x1, x2, p=2), min=eps)) +
-          torch.log(torch.clamp(F.pairwise_distance(x1, x2, p=2), min=eps))) ** 2
-    se = (torch.log(torch.clamp(self_distance(x1), min=eps)) +
-          torch.log(torch.clamp(self_distance(x2), min=eps)) * n / (n-1))
-    return torch.mean(torch.abs(ce - se))
-
 class MQJSLoss(nn.Module):
     def __init__(self, eps=1e-6):
         super().__init__()
@@ -93,8 +66,7 @@ def train():
 
     # setup optimizer
     # ==========================
-    # optimizer = optim.Adam(g.parameters(), lr=g_lr, betas=(g_b1, 0.999), weight_decay=decay)
-    optimizer = optim.Adam(g.parameters())
+    optimizer = optim.Adam(g.parameters(), lr=opt.lr, weight_decay=opt.decay)
 
 
     z = torch.FloatTensor(BS, Zdim, 1, 1).normal_(0, 1)
