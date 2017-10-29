@@ -1,142 +1,155 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# coding: utf-8
 import os
-from keras.datasets import mnist
-from PIL import Image
-from keras.models import Sequential
-from keras.optimizers import SGD, Adam
-from keras.callbacks import Callback, ModelCheckpoint
-from keras.utils import to_categorical
-import keras.backend as K
-import tensorflow as tf
-from model import *
+import argparse
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torchvision.utils as vutils
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+from torch.autograd import Variable
+from model import Generator
 from utils import *
-import better_exceptions
 
-BATCH_SIZE = 16
-NUM_EPOCH = 100
-LR = 0.0002  # initial learning rate
-B1 = 0.5  # momentum term
-Z_dim = 256
-GENERATED_IMAGE_PATH = 'images/'
-GENERATED_MODEL_PATH = 'models/'
+parser = argparse.ArgumentParser()
+parser.add_argument('--batch-size', type=int, default=32, metavar='N',
+                    help='input batch size for training (default: 32)')
+parser.add_argument('-e', '--epochs', type=int, default=100, metavar='E',
+                    help='# of epochs to train (default: 100)')
+# parser.add_argument('--lr', type=float, default=2e-4, metavar='LR',
+#                     help='learning rate for Generator (default: 2e-4)')
+# parser.add_argument('--b1', type=float, default=.9, metavar='B1',
+#                     help='Adam momentum for Generator(default: 0.9)')
+parser.add_argument('-z', '--zdim', type=int, default=100, metavar='Z',
+                    help='dimension of latent vector (default: 0.5)')
+parser.add_argument('--name', type=str, default='', metavar='NAME',
+                    help='name of the output directories (default: None)')
+parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
+                    help='set CUDA_VISIBLE_DEVICES (default: 0)')
 
-def mean_quantile_js(y_true, y_pred):
-    # def pairwise_euclid(T):
-    #     T1 = K.expand_dims(T, 1)
-    #     T2 = K.expand_dims(T, 0)
-    #     return K.sum(tf.squared_difference(T1, T2), [2,3,4])
+opt = parser.parse_args()
 
-    # N = y_true.shape[0].value
-    y_bar = (y_true + y_pred) / 2
-    # self_true = pairwise_euclid(y_true)
-    # self_pred = pairwise_euclid(y_pred)
+# set params
+# ===============
+os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
+BS = opt.batch_size
+Zdim = opt.zdim
+opt.name = opt.name if opt.name == '' else '_'+opt.name
+IMAGE_PATH = 'images'+opt.name
+MODEL_PATH = 'models'+opt.name
 
-    # D_JS Estimator. but it doesn't work
-    # =====================================
-    # loss = K.abs(K.log(K.sum(K.square(y_true - y_bar), axis=[1,2,3]) * K.sum(K.square(y_pred - y_bar), axis=[1,2,3])) -
-    #     K.log(K.sum(self_true, axis=1) * K.sum(self_pred, axis=1)) * N / (N-1))
+BS = 32
+cuda = 1
+decay = 0
 
-    # loss = K.abs(K.log(K.sum(
-    #     K.square(y_true - y_bar), axis=[1,2,3]) *
-    #     K.sum(K.square(y_pred - y_bar), axis=[1,2,3])) -
-    #     K.log(
-    #         K.sum(K.square( K.expand_dims(y_true, 1) -
-    #             K.expand_dims(y_true, 0)), axis=[1,2,3,4]) *
-    #         K.sum(K.square(K.expand_dims(y_pred, 1) -
-    #             K.expand_dims(y_pred, 0)), axis=[1,2,3,4])
-    #     ) * N / (N-1)
-    # )
+# custom loss function
+# ==========================
+def self_distance(x, eps=1e-6):
+    # mat = x.view(x.size(0),-1)
+    mat = x
+    r = torch.mm(mat, mat.t())
+    diag = r.diag().unsqueeze(0)
+    diag = diag.expand_as(r)
+    dist = diag + diag.t() - 2*r + eps
+    return dist.sqrt().sum(1)
 
-    # CE only.
-    # =====================================
-    # L2
-    ce = K.mean(K.log(K.clip(K.square(y_true - y_bar) * K.square(y_pred - y_bar), K.epsilon(), 100)))
-    # L1
-    # ce = K.mean(K.log(K.clip(K.abs(y_true - y_bar) * K.abs(y_pred - y_bar), K.epsilon(), 100)))
+def pairwise_distance(x1, x2, p=2, eps=1e-6):
+    diff = torch.abs(x1 - x2)
+    out = torch.pow(diff + eps, p).view(x1.size(0), -1).sum(dim=1, keepdim=True)
+    return torch.pow(out, 1. / p)
 
-    return K.abs(ce)
+def mqjs(input, target, eps=1e-6):
+    # assert input.size() == target.size()
+    n = input.size()[0]
+    x1 = input.view(n, -1)
+    x2 = target.view(n, -1)
+    p_ = (x1 + x2) / 2
+    ce = (torch.log(torch.clamp(F.pairwise_distance(x1, x2, p=2), min=eps)) +
+          torch.log(torch.clamp(F.pairwise_distance(x1, x2, p=2), min=eps))) ** 2
+    se = (torch.log(torch.clamp(self_distance(x1), min=eps)) +
+          torch.log(torch.clamp(self_distance(x2), min=eps)) * n / (n-1))
+    return torch.mean(torch.abs(ce - se))
 
-def custom_generator(X, num_batch):
-    while 1:
-        for i in range(num_batch):
-            last_index = min((i+1)*BATCH_SIZE, len(X))
-            x = X[i*BATCH_SIZE:last_index]
-            yield (np.random.normal(0,1,(len(x), Z_dim)), x)
+class MQJSLoss(nn.Module):
+    def __init__(self, eps=1e-6):
+        super().__init__()
+        self.eps = eps
 
-def custom_generator_categorical(X, Y, num_batch):
-    assert len(X) == len(Y)
-    while 1:
-        for i in range(num_batch):
-            last_index = min((i+1)*BATCH_SIZE, len(X))
-            x = X[i*BATCH_SIZE:last_index]
-            y = Y[i*BATCH_SIZE:last_index]
-            yield (np.append(np.random.normal(0,1,(len(x),Z_dim)), y, axis=1), x)
+    def forward(self, input, target):
+        return mqjs(input, target, self.eps)
 
-def sampler_uniform(size=BATCH_SIZE):
-    return np.random.uniform(-1, 1, (size, Z_dim))
-
-def sampler_normal(size=BATCH_SIZE):
-    return np.random.normal(0, 1, (size, Z_dim))
-
-def sampler_normal_categorical(num_classes=10):
-    return np.append(np.random.normal(0,1,(num_classes**2, Z_dim)),
-            to_categorical(np.array([range(num_classes) for _ in range(num_classes)])), axis=1)
-
-class PredictionSaver(Callback):
-    def __init__(self, g, sample):
-        self.g = g;
-        self.sample = sample;
-    def on_epoch_end(self, epoch, logs={}):
-        image = combine_images(self.g.predict(self.sample))
-        image = image * 127.5 + 127.5
-        Image.fromarray(image.astype(np.uint8))\
-            .save(GENERATED_IMAGE_PATH+"%03depoch.png" % (epoch+1))
 
 def train():
-    # create directory
-    if not os.path.exists(GENERATED_IMAGE_PATH):
-        os.mkdir(GENERATED_IMAGE_PATH)
-    if not os.path.exists(GENERATED_MODEL_PATH):
-        os.mkdir(GENERATED_MODEL_PATH)
+    g = Generator(Zdim)
+    # load trained model
+    # model_path = ''
+    # g.load_state_dict(torch.load(model_path))
 
-    # load images
-    (X_train, y_train), (X_test, y_test) = mnist.load_data()
-    num_classes = 10
-    X_train = np.concatenate((X_train, X_test), axis=0)
-    y_train = np.concatenate((y_train, y_test))
-    num_train = len(X_train)
-    num_batch = int(num_train/BATCH_SIZE)
-    print("# of samples: ", num_train)
-    print("# of batches: ", num_batch)
-    # normalize images
-    X_train = (X_train.astype(np.float32) - 127.5)/127.5
-    X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
+    # custom loss function
+    # ==========================
+    criterion = MQJSLoss()
 
-    y_train = to_categorical(y_train, num_classes)
+    # setup optimizer
+    # ==========================
+    # optimizer = optim.Adam(g.parameters(), lr=g_lr, betas=(g_b1, 0.999), weight_decay=decay)
+    optimizer = optim.Adam(g.parameters())
 
-    # original
-    # g = generator(input_dim=Z_dim)
-    # categorical
-    g = generator(input_dim=Z_dim+num_classes)
 
-    opt= Adam()
-    # opt= Adam(lr=LR,beta_1=B1)
-    g.compile(loss=mean_quantile_js, optimizer=opt)
+    z = torch.FloatTensor(BS, Zdim, 1, 1).normal_(0, 1)
+    z_pred = torch.FloatTensor(64, Zdim, 1, 1).normal_(0, 1)
+    # cuda
+    if cuda:
+        g.cuda()
+        criterion.cuda()
+        z, z_pred = z.cuda(), z_pred.cuda()
 
-    z_pred = sampler_normal_categorical(num_classes)
+    z_pred = Variable(z_pred)
 
-    pred_saver = PredictionSaver(g, z_pred)
-    checkpointer = ModelCheckpoint(
-            filepath=os.path.join(GENERATED_MODEL_PATH, 'model.h5'),
-            verbose=0)
+    # load dataset
+    # ==========================
+    kwargs = dict(num_workers=1, pin_memory=True) if cuda else {}
+    dataloader = DataLoader(
+        datasets.MNIST('mnist', download=True,
+                       transform=transforms.Compose([
+                           transforms.Scale(32),
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ])),
+        batch_size=BS, shuffle=True, **kwargs
+    )
+    N = len(dataloader)
 
-    g.fit_generator(custom_generator_categorical(X_train, y_train, num_batch),
-            steps_per_epoch=num_batch,
-            epochs=NUM_EPOCH,
-            callbacks=[pred_saver, checkpointer])
+    # train
+    # ==========================
+    for epoch in range(1,opt.epochs+1):
+        loss_mean = 0.0
+        for i, (imgs, labels) in enumerate(dataloader):
+            if cuda:
+                imgs, labels = imgs.cuda(), labels.cuda()
+            imgs, labels = Variable(imgs), Variable(labels)
 
-    K.clear_session()
+            g.zero_grad()
+            # forward & backward & update params
+            z.resize_(BS, Zdim, 1, 1).normal_(0, 1)
+    #         z = np.concatenate()  # concatenate with label
+            zv = Variable(z)
+            outputs = g(zv)
+            loss = criterion(outputs, imgs)
+            loss.backward()
+            optimizer.step()
+
+            loss_mean += loss.data[0]
+            show_progress(epoch, i, N, loss.data[0])
+
+        print('\ttotal loss (mean): %f' % (loss_mean/N))
+        # generate fake images
+        vutils.save_image(g(z_pred).data,
+                          os.path.join(IMAGE_PATH,'%d.png' % epoch),
+                          normalize=True)
+    # save models
+    torch.save(g.state_dict(), os.path.join(MODEL_PATH, 'models.pth'))
 
 if __name__ == '__main__':
     train()

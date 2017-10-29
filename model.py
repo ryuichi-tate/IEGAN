@@ -1,71 +1,28 @@
 # -*- coding: utf-8 -*-
-from keras.models import Sequential
-from keras.layers import Dense, Activation, Reshape
-from keras.layers.normalization import BatchNormalization
-from keras.layers.convolutional import UpSampling2D, Conv2D, MaxPooling2D, Conv2DTranspose
-from keras.layers.advanced_activations import LeakyReLU, ELU
-from keras.regularizers import l2
-from keras.layers import Flatten, Dropout
+import torch.nn as nn
+import torch.nn.functional as F
 
-def generator(input_dim=100,units=256,width=28,activation='relu',ch=1):
-    w4 = int(width/4)
-    model = Sequential()
-    model.add(Dense(input_dim=input_dim, units=units*(w4)*(w4), kernel_regularizer=l2(0.0001)))
-    # model.add(Dropout(0.2))
-    model.add(Activation(activation))
-    model.add(Reshape((w4, w4, units), input_shape=(units*w4*w4,)))
+class Generator(nn.Module):
+    def __init__(self, zdim, ch=1):
+        super().__init__()
+        self.zdim = zdim
+        self.ch = ch
+        self.filters = 32
+        self.convt1 = nn.ConvTranspose2d(zdim, self.filters*4, 4, stride=1, padding=0, bias=False)
+        self.convt2 = nn.ConvTranspose2d(self.filters*4, self.filters*2, 4, stride=2, padding=1, bias=False)
+        self.convt3 = nn.ConvTranspose2d(self.filters*2, self.filters, 4, stride=2, padding=1, bias=False)
+        self.convt4 = nn.ConvTranspose2d(self.filters, self.ch, 4, stride=2, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(self.filters*4)
+        self.bn2 = nn.BatchNorm2d(self.filters*2)
+        self.bn3 = nn.BatchNorm2d(self.filters)
+        self.bn4 = nn.BatchNorm2d(self.ch)
 
-    model.add(Conv2DTranspose(int(units/2), 4, strides=2, padding='same', kernel_regularizer=l2(0.0001)))
-    model.add(BatchNormalization())
-    # model.add(Dropout(0.2))
-    model.add(Activation(activation))
+    def forward(self, x):
+        # x = F.selu(self.convt1(x))           # (?,zdim, 1, 1) => (?,128, 4, 4)
+        x = F.selu(self.bn1(self.convt1(x))) # (?,zdim, 1, 1) => (?,128, 4, 4)
+        x = F.selu(self.bn2(self.convt2(x))) # (?, 128, 4, 4) => (?, 64, 8, 8)
+        x = F.selu(self.bn3(self.convt3(x))) # (?,  64, 8, 8) => (?, 32,16,16)
+        x = F.tanh(self.bn4(self.convt4(x))) # (?,  32,16,16) => (?, ch,32,32)
 
-    model.add(Conv2DTranspose(ch, 4, strides=2, padding='same', kernel_regularizer=l2(0.0001)))
-    # model.add(Dropout(0.2))
-    model.add(Activation('tanh'))
-    model.summary()
-    return model
-
-def generator_conditional(input_dim=100,units=256,width=28,activation='relu',ch=1):
-    w4 = int(width/4)
-    model = Sequential()
-    model.add(Dense(input_dim=input_dim+10, units=units*(w4)*(w4), kernel_regularizer=l2(0.0001)))
-    # model.add(Dropout(0.2))
-    model.add(Activation(activation))
-    model.add(Reshape((w4, w4, units), input_shape=(units*w4*w4,)))
-
-    model.add(Conv2DTranspose(int(units/2), 4, strides=2, padding='same', kernel_regularizer=l2(0.0001)))
-    model.add(BatchNormalization())
-    # model.add(Dropout(0.2))
-    model.add(Activation(activation))
-
-    model.add(Conv2DTranspose(ch, 4, strides=2, padding='same', kernel_regularizer=l2(0.0001)))
-    # model.add(Dropout(0.2))
-    model.add(Activation('tanh'))
-    model.summary()
-    return model
-
-def generator_upsampling(input_dim=100,units=1024,activation='relu'):
-    model = Sequential()
-    model.add(Dense(units=units, input_shape=(input_dim,)))
-    model.add(BatchNormalization())
-    model.add(Dropout(0.2))
-    model.add(Activation(activation))
-    model.add(Dense(128*7*7))
-    model.add(BatchNormalization())
-    model.add(Dropout(0.2))
-    model.add(Activation(activation))
-    model.add(Reshape((7, 7, 128), input_shape=(128*7*7,)))
-    model.add(UpSampling2D((2, 2)))
-    model.add(Conv2D(64, (5, 5), padding='same'))
-    model.add(BatchNormalization())
-    model.add(Dropout(0.2))
-    model.add(Activation(activation))
-    model.add(UpSampling2D((2, 2)))
-    model.add(Conv2D(1, (5, 5), padding='same'))
-    model.add(BatchNormalization())
-    model.add(Dropout(0.2))
-    model.add(Activation('tanh'))
-    model.summary()
-    return model
+        return x
 
