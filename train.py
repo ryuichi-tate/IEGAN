@@ -16,6 +16,8 @@ parser.add_argument('--name', type=str, default='', metavar='NAME',
                     help='name of the output directories (default: None)')
 parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
                     help='set CUDA_VISIBLE_DEVICES (default: 0)')
+parser.add_argument('-d', '--distance', type=str, default='js', metavar='Distance',
+                    help='specify distance function (default: js)')
 
 opt = parser.parse_args()
 
@@ -28,30 +30,25 @@ opt.name = opt.name if opt.name == '' else '_'+opt.name
 IMAGE_PATH = 'images'+opt.name
 MODEL_PATH = 'models'+opt.name
 
+if not os.path.exists(IMAGE_PATH):
+    print('mkdir ', IMAGE_PATH)
+    os.mkdir(IMAGE_PATH)
+if not os.path.exists(MODEL_PATH):
+    print('mkdir ', MODEL_PATH)
+    os.mkdir(MODEL_PATH)
+
 cuda = 1
 
 # ===============
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.utils as vutils
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from model import Generator
+from entropy_estimator import MQJSLoss, MQKLLoss, MQJSExpLoss, MQKLExpLoss, MQJSLoss2
 from utils import *
-
-# custom loss function
-# ==========================
-class MQJSLoss(nn.Module):
-    def __init__(self, eps=1e-6):
-        super().__init__()
-        self.eps = eps
-
-    def forward(self, input, target):
-        return mqjs(input, target, self.eps)
 
 
 def train():
@@ -63,6 +60,18 @@ def train():
     # custom loss function
     # ==========================
     criterion = MQJSLoss()
+    if opt.distance == 'kl':
+        print('MQKLLoss')
+        criterion = MQKLLoss()
+    elif opt.distance == 'jsexp':
+        print('MQJSExpLoss')
+        criterion = MQJSExpLoss()
+    elif opt.distance == 'klexp':
+        print('MQKLExpLoss')
+        criterion = MQKLExpLoss()
+    elif opt.distance == 'js2':
+        print('MQJSLoss2')
+        criterion = MQJSLoss2()
 
     # setup optimizer
     # ==========================
@@ -97,15 +106,14 @@ def train():
     # ==========================
     for epoch in range(1,opt.epochs+1):
         loss_mean = 0.0
-        for i, (imgs, labels) in enumerate(dataloader):
+        for i, (imgs, _) in enumerate(dataloader):
             if cuda:
-                imgs, labels = imgs.cuda(), labels.cuda()
-            imgs, labels = Variable(imgs), Variable(labels)
+                imgs = imgs.cuda()
+            imgs = Variable(imgs)
 
             g.zero_grad()
             # forward & backward & update params
             z.resize_(BS, Zdim, 1, 1).normal_(0, 1)
-    #         z = np.concatenate()  # concatenate with label
             zv = Variable(z)
             outputs = g(zv)
             loss = criterion(outputs, imgs)
@@ -113,7 +121,7 @@ def train():
             optimizer.step()
 
             loss_mean += loss.data[0]
-            show_progress(epoch, i, N, loss.data[0])
+            show_progress(epoch, i+1, N, loss.data[0])
 
         print('\ttotal loss (mean): %f' % (loss_mean/N))
         # generate fake images
