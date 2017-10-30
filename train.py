@@ -29,7 +29,7 @@ opt = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 BS = opt.batch_size
 Zdim = opt.zdim
-opt.name = opt.name if opt.name == '' else '_'+opt.name
+opt.name = opt.name if opt.name == '' else '/'+opt.name
 IMAGE_PATH = 'images'+opt.name
 MODEL_PATH = 'models'+opt.name
 
@@ -51,7 +51,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from model import Generator
-from entropy_estimator import MQJSLoss, MQKLLoss, MQJSExpLoss, MQKLExpLoss, MQJSLoss2
+from entropy_estimator import MQJSLoss, MQKLLoss, MQJSLoss2
 from utils import *
 
 
@@ -67,12 +67,6 @@ def train():
     if opt.distance == 'kl':
         print('MQKLLoss')
         criterion = MQKLLoss()
-    elif opt.distance == 'jsexp':
-        print('MQJSExpLoss')
-        criterion = MQJSExpLoss()
-    elif opt.distance == 'klexp':
-        print('MQKLExpLoss')
-        criterion = MQKLExpLoss()
     elif opt.distance == 'js2':
         print('MQJSLoss2')
         criterion = MQJSLoss2()
@@ -106,10 +100,10 @@ def train():
     )
     N = len(dataloader)
     if opt.history:
-        loss_history = np.empty(N*epochs, dtype=np.float32)
+        loss_history = np.empty(N*opt.epochs, dtype=np.float32)
     # train
     # ==========================
-    for epoch in range(1,opt.epochs+1):
+    for epoch in range(opt.epochs):
         loss_mean = 0.0
         for i, (imgs, _) in enumerate(dataloader):
             if cuda:
@@ -133,7 +127,7 @@ def train():
         print('\ttotal loss (mean): %f' % (loss_mean/N))
         # generate fake images
         vutils.save_image(g(z_pred).data,
-                          os.path.join(IMAGE_PATH,'%d.png' % epoch+1),
+                          os.path.join(IMAGE_PATH,'%d.png' % (epoch+1)),
                           normalize=True)
     # save models
     torch.save(g.state_dict(), os.path.join(MODEL_PATH, 'models.pth'))

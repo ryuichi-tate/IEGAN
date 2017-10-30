@@ -24,56 +24,26 @@ def cross_entropy(x1, x2, eps=1e-6):
     dist = x1_2 + x2_2 - 2*x1x2 + eps
     return dist.clamp(min=1).sqrt().log().sum(1)
 
-def entropy_exp(x, eps=1e-6):
-    mat = x.view(x.size(0), -1)
-    r = torch.mm(mat, mat.t())
-    diag = r.diag().unsqueeze(0)
-    diag = diag.expand_as(r)
-    dist = diag + diag.t() - 2*r + eps
-    return dist.clamp(min=0).sqrt().sum(1)
-
-def cross_entropy_exp(x1, x2, eps=1e-6):
-    x1 = x1.view(x1.size(0), -1)
-    x2 = x2.view(x2.size(0), -1)
-    x1x2 = torch.mm(x1, x2.t())
-    x2x1 = torch.mm(x2, x1.t())
-    x1_2 = torch.mm(x1,x1.t()).diag().unsqueeze(0).expand_as(x1x2).t()
-    x2_2 = torch.mm(x2,x2.t()).diag().unsqueeze(0).expand_as(x1x2)
-    # x^2 + y^2 - xy - yx
-    dist = x1_2 + x2_2 - 2*x1x2 + eps
-    return dist.clamp(min=0).sqrt().sum(1)
-
 def mqjs(input, target, eps=1e-6):
     n = input.size()[0]
     p_ = (input + target) / 2
     ce = cross_entropy(input, p_, eps) + cross_entropy(target, p_, eps)
-    se = entropy(input, eps) + entropy(target, eps) * n / (n-1)
+    # se = (entropy(input, eps) + entropy(target, eps)) * n / (n-1)
+    se = entropy(input, eps) * n / (n-1)
     return torch.mean(ce - se)
 
 def mqjs2(input, target, eps=1e-6):
     n = input.size()[0]
     p_ = (input + target) / 2
     ce = cross_entropy(input, p_, eps) + cross_entropy(target, p_, eps)
-    se = entropy(input, eps) + entropy(target, eps) * n / (n-1)
+    # se = (entropy(input, eps) + entropy(target, eps)) * n / (n-1)
+    se = entropy(input, eps) * n / (n-1)
     return torch.mean(torch.exp(ce - se))
 
 def mqkl(input, target, eps=1e-6):
     n = input.size()[0]
     ce = cross_entropy(input, target, eps)
     se = entropy(input, eps) * n / (n-1)
-    return torch.mean(ce - se)
-
-def mqjs_exp(input, target, eps=1e-6):
-    n = input.size()[0]
-    p_ = (input + target) / 2
-    ce = cross_entropy_exp(input, p_, eps) + cross_entropy_exp(target, p_, eps)
-    se = entropy_exp(input, eps) + entropy_exp(target, eps) * n / (n-1)
-    return torch.mean(ce - se)
-
-def mqkl_exp(input, target, eps=1e-6):
-    n = input.size()[0]
-    ce = cross_entropy_exp(input, target, eps)
-    se = entropy_exp(input, eps) * n / (n-1)
     return torch.mean(ce - se)
 
 class MQJSLoss(nn.Module):
@@ -84,14 +54,6 @@ class MQJSLoss(nn.Module):
     def forward(self, input, target):
         return mqjs(input, target, self.eps)
 
-class MQJSLoss2(nn.Module):
-    def __init__(self, eps=1e-6):
-        super().__init__()
-        self.eps = eps
-
-    def forward(self, input, target):
-        return mqjs2(input, target, self.eps)
-
 class MQKLLoss(nn.Module):
     def __init__(self, eps=1e-6):
         super().__init__()
@@ -100,19 +62,11 @@ class MQKLLoss(nn.Module):
     def forward(self, input, target):
         return mqkl(input, target, self.eps)
 
-class MQJSExpLoss(nn.Module):
+class MQJSLoss2(nn.Module):
     def __init__(self, eps=1e-6):
         super().__init__()
         self.eps = eps
 
     def forward(self, input, target):
-        return mqjs_exp(input, target, self.eps)
-
-class MQKLExpLoss(nn.Module):
-    def __init__(self, eps=1e-6):
-        super().__init__()
-        self.eps = eps
-
-    def forward(self, input, target):
-        return mqkl_exp(input, target, self.eps)
+        return mqjs2(input, target, self.eps)
 

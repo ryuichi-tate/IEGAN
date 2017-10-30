@@ -16,6 +16,11 @@ parser.add_argument('--name', type=str, default='', metavar='NAME',
                     help='name of the output directories (default: None)')
 parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
                     help='set CUDA_VISIBLE_DEVICES (default: 0)')
+parser.add_argument('-d', '--distance', type=str, default='js', metavar='Distance',
+                    help='specify distance function (default: js)')
+parser.add_argument('--history', dest='history', action='store_true',
+                    help='save loss history')
+parser.set_defaults(history=False)
 
 opt = parser.parse_args()
 
@@ -24,7 +29,7 @@ opt = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 BS = opt.batch_size
 Zdim = opt.zdim
-opt.name = opt.name if opt.name == '' else '_'+opt.name
+opt.name = opt.name if opt.name == '' else '/'+opt.name
 IMAGE_PATH = 'images'+opt.name
 MODEL_PATH = 'models'+opt.name
 
@@ -45,7 +50,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from model import Generator01
-from entropy_estimator import MQJSLoss, MQKLLoss
+from entropy_estimator import MQJSLoss, MQKLLoss, MQJSLoss2
 from utils import *
 
 
@@ -57,7 +62,13 @@ def train():
 
     # custom loss function
     # ==========================
-    criterion = MQKLLoss()
+    criterion = MQJSLoss()
+    if opt.distance == 'kl':
+        print('MQKLLoss')
+        criterion = MQKLLoss()
+    elif opt.distance == 'js2':
+        print('MQJSLoss2')
+        criterion = MQJSLoss2()
 
     # setup optimizer
     # ==========================
@@ -85,10 +96,11 @@ def train():
         batch_size=BS, shuffle=True, **kwargs
     )
     N = len(dataloader)
-
+    if opt.history:
+        loss_history = np.empty(N*opt.epochs, dtype=np.float32)
     # train
     # ==========================
-    for epoch in range(1,opt.epochs+1):
+    for epoch in range(opt.epochs):
         loss_mean = 0.0
         for i, (imgs, _) in enumerate(dataloader):
             if cuda:
@@ -105,15 +117,20 @@ def train():
             optimizer.step()
 
             loss_mean += loss.data[0]
-            show_progress(epoch, i+1, N, loss.data[0])
+            if opt.history:
+                loss_history[N*epoch + i] = loss.data[0]
+            show_progress(epoch+1, i+1, N, loss.data[0])
 
         print('\ttotal loss (mean): %f' % (loss_mean/N))
         # generate fake images
         vutils.save_image(g(z_pred).data,
-                          os.path.join(IMAGE_PATH,'%d.png' % epoch),
+                          os.path.join(IMAGE_PATH,'%d.png' % epoch+1),
                           normalize=False)
     # save models
     torch.save(g.state_dict(), os.path.join(MODEL_PATH, 'models.pth'))
+    # save loss history
+    if opt.history:
+        np.save('history'+opt.name, loss_history)
 
 if __name__ == '__main__':
     train()
