@@ -1,6 +1,6 @@
 # user configurations
-images/
-models/
+images*/
+models*/
 CIFAR10/
 MNIST/
 
