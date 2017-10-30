@@ -18,6 +18,9 @@ parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
                     help='set CUDA_VISIBLE_DEVICES (default: 0)')
 parser.add_argument('-d', '--distance', type=str, default='js', metavar='Distance',
                     help='specify distance function (default: js)')
+parser.add_argument('--history', dest='history', action='store_true',
+                    help='save loss history')
+parser.set_defaults(history=False)
 
 opt = parser.parse_args()
 
@@ -40,6 +43,7 @@ if not os.path.exists(MODEL_PATH):
 cuda = 1
 
 # ===============
+import numpy as np
 import torch
 import torch.optim as optim
 import torchvision.utils as vutils
@@ -101,7 +105,8 @@ def train():
         batch_size=BS, shuffle=True, **kwargs
     )
     N = len(dataloader)
-
+    if opt.history:
+        loss_history = np.empty(N*epochs, dtype=np.float32)
     # train
     # ==========================
     for epoch in range(1,opt.epochs+1):
@@ -121,15 +126,21 @@ def train():
             optimizer.step()
 
             loss_mean += loss.data[0]
-            show_progress(epoch, i+1, N, loss.data[0])
+            if opt.history:
+                loss_history[N*epoch + i] = loss.data[0]
+            show_progress(epoch+1, i+1, N, loss.data[0])
 
         print('\ttotal loss (mean): %f' % (loss_mean/N))
         # generate fake images
         vutils.save_image(g(z_pred).data,
-                          os.path.join(IMAGE_PATH,'%d.png' % epoch),
+                          os.path.join(IMAGE_PATH,'%d.png' % epoch+1),
                           normalize=True)
     # save models
     torch.save(g.state_dict(), os.path.join(MODEL_PATH, 'models.pth'))
+    # save loss history
+    if opt.history:
+        np.save('history'+opt.name, loss_history)
+
 
 if __name__ == '__main__':
     train()
