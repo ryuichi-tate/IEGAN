@@ -62,13 +62,13 @@ def train():
 
     # custom loss function
     # ==========================
-    criterion = MQJSLoss()
-    if opt.distance == 'kl':
-        print('MQKLLoss')
-        criterion = MQKLLoss()
-    elif opt.distance == 'js2':
-        print('MQJSLoss2')
-        criterion = MQJSLoss2()
+    criterion = MQKLLoss()
+    # if opt.distance == 'kl':
+    #     print('MQKLLoss')
+    #     criterion = MQKLLoss()
+    # elif opt.distance == 'js2':
+    #     print('MQJSLoss2')
+    #     criterion = MQJSLoss2()
 
     # setup optimizer
     # ==========================
@@ -124,7 +124,7 @@ def train():
         print('\ttotal loss (mean): %f' % (loss_mean/N))
         # generate fake images
         vutils.save_image(g(z_pred).data,
-                          os.path.join(IMAGE_PATH,'%d.png' % epoch+1),
+                          os.path.join(IMAGE_PATH,'%d.png' % (epoch+1)),
                           normalize=False)
     # save models
     torch.save(g.state_dict(), os.path.join(MODEL_PATH, 'models.pth'))

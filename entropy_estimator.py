@@ -17,7 +17,6 @@ def cross_entropy(x1, x2, eps=1e-6):
     x1 = x1.view(x1.size(0), -1)
     x2 = x2.view(x2.size(0), -1)
     x1x2 = torch.mm(x1, x2.t())
-    x2x1 = torch.mm(x2, x1.t())
     x1_2 = torch.mm(x1,x1.t()).diag().unsqueeze(0).expand_as(x1x2).t()
     x2_2 = torch.mm(x2,x2.t()).diag().unsqueeze(0).expand_as(x1x2)
     # x^2 + y^2 - xy - yx
@@ -34,11 +33,13 @@ def mqjs(input, target, eps=1e-6):
 
 def mqjs2(input, target, eps=1e-6):
     n = input.size()[0]
+    input = F.max_pool2d(input, 2)
+    target = F.max_pool2d(target, 2)
     p_ = (input + target) / 2
     ce = cross_entropy(input, p_, eps) + cross_entropy(target, p_, eps)
     # se = (entropy(input, eps) + entropy(target, eps)) * n / (n-1)
     se = entropy(input, eps) * n / (n-1)
-    return torch.mean(torch.exp(ce - se))
+    return torch.mean(ce - se)
 
 def mqkl(input, target, eps=1e-6):
     n = input.size()[0]

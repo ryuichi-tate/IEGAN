@@ -49,13 +49,13 @@ class Generator01(nn.Module):
         self.d1 = nn.Dropout2d()
 
     def forward(self, x):
-        # x = F.relu(self.convt1(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
-        # x = F.relu(self.convt2(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
-        # x = F.relu(self.convt3(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
-        # x = F.tanh(self.convt4(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
-        x = F.leaky_relu(self.bn1(self.convt1(x))) # (?,zdim, 1, 1) => (?,128, 4, 4)
-        x = F.leaky_relu(self.bn2(self.convt2(x))) # (?, 128, 4, 4) => (?, 64, 8, 8)
-        x = F.leaky_relu(self.bn3(self.convt3(x))) # (?,  64, 8, 8) => (?, 32,16,16)
-        x = F.sigmoid(self.bn4(self.convt4(x))) # (?,  32,16,16) => (?, ch,32,32)
+        x = F.leaky_relu(self.convt1(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
+        x = F.leaky_relu(self.convt2(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
+        x = F.leaky_relu(self.convt3(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
+        x = F.sigmoid(self.convt4(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
+        # x = F.leaky_relu(self.bn1(self.convt1(x))) # (?,zdim, 1, 1) => (?,128, 4, 4)
+        # x = F.leaky_relu(self.bn2(self.convt2(x))) # (?, 128, 4, 4) => (?, 64, 8, 8)
+        # x = F.leaky_relu(self.bn3(self.convt3(x))) # (?,  64, 8, 8) => (?, 32,16,16)
+        # x = F.sigmoid(self.bn4(self.convt4(x))) # (?,  32,16,16) => (?, ch,32,32)
         return x
 

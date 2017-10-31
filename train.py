@@ -63,13 +63,13 @@ def train():
 
     # custom loss function
     # ==========================
-    criterion = MQJSLoss()
-    if opt.distance == 'kl':
-        print('MQKLLoss')
-        criterion = MQKLLoss()
-    elif opt.distance == 'js2':
-        print('MQJSLoss2')
-        criterion = MQJSLoss2()
+    criterion = MQKLLoss()
+    # if opt.distance == 'kl':
+    #     print('MQKLLoss')
+    #     criterion = MQKLLoss()
+    # elif opt.distance == 'js2':
+    #     print('MQJSLoss2')
+    #     criterion = MQJSLoss2()
 
     # setup optimizer
     # ==========================
