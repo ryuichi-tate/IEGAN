@@ -50,13 +50,13 @@ import torchvision.utils as vutils
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
-from model import Generator
+from model import Generator, Generator01
 from entropy_estimator import MQJSLoss, MQKLLoss, MQJSLoss2
 from utils import *
 
 
 def train():
-    g = Generator(Zdim)
+    g = Generator01(Zdim)
     # load trained model
     # model_path = ''
     # g.load_state_dict(torch.load(model_path))
@@ -93,8 +93,8 @@ def train():
         datasets.MNIST('MNIST', download=True,
                        transform=transforms.Compose([
                            transforms.Scale(32),
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))
+                           transforms.ToTensor()
+                           # transforms.Normalize((0.1307,), (0.3081,))
                        ])),
         batch_size=BS, shuffle=True, **kwargs
     )
@@ -128,7 +128,8 @@ def train():
         # generate fake images
         vutils.save_image(g(z_pred).data,
                           os.path.join(IMAGE_PATH,'%d.png' % (epoch+1)),
-                          normalize=True)
+                          normalize=False)
+                          # normalize=True)
     # save models
     torch.save(g.state_dict(), os.path.join(MODEL_PATH, 'models.pth'))
     # save loss history
