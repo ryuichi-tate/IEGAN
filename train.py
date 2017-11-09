@@ -16,16 +16,17 @@ parser.add_argument('--name', type=str, default='', metavar='NAME',
                     help='name of the output directories (default: None)')
 parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
                     help='set CUDA_VISIBLE_DEVICES (default: 0)')
-parser.add_argument('-d', '--distance', type=str, default='js', metavar='Distance',
-                    help='specify distance function (default: js)')
 parser.add_argument('--history', dest='history', action='store_true',
                     help='save loss history')
+# parser.add_argument('-d', '--distance', type=str, default='js', metavar='Distance',
+#                     help='specify distance function (default: js)')
 parser.set_defaults(history=False)
 
 opt = parser.parse_args()
 
 # set params
 # ===============
+cuda = 1
 os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 BS = opt.batch_size
 Zdim = opt.zdim
@@ -39,8 +40,9 @@ if not os.path.exists(IMAGE_PATH):
 if not os.path.exists(MODEL_PATH):
     print('mkdir ', MODEL_PATH)
     os.mkdir(MODEL_PATH)
-
-cuda = 1
+if not os.path.exists('history'):
+    print('mkdir history')
+    os.mkdir('history')
 
 # ===============
 import numpy as np
@@ -51,7 +53,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from model import Generator, Generator01
-from entropy_estimator import MQJSLoss, MQKLLoss, MQJSLoss2
+from entropy_estimator import MQKLLoss, MQKLLoss2
 from utils import *
 
 
@@ -64,12 +66,6 @@ def train():
     # custom loss function
     # ==========================
     criterion = MQKLLoss()
-    # if opt.distance == 'kl':
-    #     print('MQKLLoss')
-    #     criterion = MQKLLoss()
-    # elif opt.distance == 'js2':
-    #     print('MQJSLoss2')
-    #     criterion = MQJSLoss2()
 
     # setup optimizer
     # ==========================
