@@ -2,6 +2,8 @@
 import os
 import argparse
 parser = argparse.ArgumentParser()
+parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
+                    help='set CUDA_VISIBLE_DEVICES (default: 0)')
 parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                     help='input batch size for training (default: 32)')
 parser.add_argument('-e', '--epochs', type=int, default=100, metavar='E',
@@ -12,14 +14,12 @@ parser.add_argument('--decay', type=float, default=0, metavar='D',
                     help='weight decay or L2 penalty (default: 0)')
 parser.add_argument('-z', '--zdim', type=int, default=100, metavar='Z',
                     help='dimension of latent vector (default: 0.5)')
-parser.add_argument('--name', type=str, default='', metavar='NAME',
-                    help='name of the output directories (default: None)')
-parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
-                    help='set CUDA_VISIBLE_DEVICES (default: 0)')
 parser.add_argument('--history', dest='history', action='store_true',
                     help='save loss history')
-# parser.add_argument('-d', '--distance', type=str, default='js', metavar='Distance',
-#                     help='specify distance function (default: js)')
+parser.add_argument('--name', type=str, default='', metavar='NAME',
+                    help='name of the output directories (default: None)')
+parser.add_argument('-t', '--threshold', type=int, default=150, metavar='T',
+                    help='param of threshold function (default: 150)')
 parser.set_defaults(history=False)
 
 opt = parser.parse_args()
@@ -32,14 +32,12 @@ BS = opt.batch_size
 Zdim = opt.zdim
 opt.name = opt.name if opt.name == '' else '/'+opt.name
 IMAGE_PATH = 'images'+opt.name
-MODEL_PATH = 'models'+opt.name
+model_name = 'model' if opt.name == '' else opt.name
+MODEL_FULLPATH = 'models/'+model_name+'.pth'
 
 if not os.path.exists(IMAGE_PATH):
     print('mkdir ', IMAGE_PATH)
     os.mkdir(IMAGE_PATH)
-if not os.path.exists(MODEL_PATH):
-    print('mkdir ', MODEL_PATH)
-    os.mkdir(MODEL_PATH)
 if not os.path.exists('history'):
     print('mkdir history')
     os.mkdir('history')
@@ -53,7 +51,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from model import Generator, Generator01
-from entropy_estimator import MQKLLoss, MQKLLoss2
+from entropy_estimator import MQKLLoss
 from utils import *
 
 
@@ -65,7 +63,7 @@ def train():
 
     # custom loss function
     # ==========================
-    criterion = MQKLLoss()
+    criterion = MQKLLoss(th=opt.threshold)
 
     # setup optimizer
     # ==========================
@@ -127,7 +125,7 @@ def train():
                           normalize=False)
                           # normalize=True)
     # save models
-    torch.save(g.state_dict(), os.path.join(MODEL_PATH, 'models.pth'))
+    torch.save(g.state_dict(), MODEL_FULLPATH)
     # save loss history
     if opt.history:
         np.save('history'+opt.name, loss_history)
