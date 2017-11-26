@@ -4,7 +4,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
                     help='set CUDA_VISIBLE_DEVICES (default: 0)')
-parser.add_argument('--batch-size', type=int, default=32, metavar='N',
+parser.add_argument('-b', '--batch-size', type=int, default=32, metavar='N',
                     help='input batch size for training (default: 32)')
 parser.add_argument('-e', '--epochs', type=int, default=100, metavar='E',
                     help='# of epochs to train (default: 100)')
@@ -18,8 +18,8 @@ parser.add_argument('--history', dest='history', action='store_true',
                     help='save loss history')
 parser.add_argument('--name', type=str, default='', metavar='NAME',
                     help='name of the output directories (default: None)')
-parser.add_argument('-t', '--threshold', type=int, default=150, metavar='T',
-                    help='param of threshold function (default: 150)')
+parser.add_argument('-t', '--threshold', type=int, default=1, metavar='T',
+                    help='param of threshold function (default: 1)')
 parser.set_defaults(history=False)
 
 opt = parser.parse_args()
@@ -50,16 +50,16 @@ import torchvision.utils as vutils
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
-from model import Generator, Generator01
+from model import Generator, Generator01, Autoencoder
 from entropy_estimator import MQKLLoss
 from utils import *
 
 
 def train():
     g = Generator01(Zdim)
-    # load trained model
-    # model_path = ''
-    # g.load_state_dict(torch.load(model_path))
+    # load pretrained Autoencoder
+    ae = Autoencoder()
+    ae.load_state_dict(torch.load('models/autoencoder.pth'))
 
     # custom loss function
     # ==========================
@@ -75,6 +75,7 @@ def train():
     # cuda
     if cuda:
         g.cuda()
+        ae.cuda()
         criterion.cuda()
         z, z_pred = z.cuda(), z_pred.cuda()
 
@@ -86,7 +87,6 @@ def train():
     dataloader = DataLoader(
         datasets.MNIST('MNIST', download=True,
                        transform=transforms.Compose([
-                           transforms.Scale(32),
                            transforms.ToTensor()
                            # transforms.Normalize((0.1307,), (0.3081,))
                        ])),
@@ -97,6 +97,7 @@ def train():
         loss_history = np.empty(N*opt.epochs, dtype=np.float32)
     # train
     # ==========================
+    ae.eval()
     for epoch in range(opt.epochs):
         loss_mean = 0.0
         for i, (imgs, _) in enumerate(dataloader):
@@ -104,12 +105,15 @@ def train():
                 imgs = imgs.cuda()
             imgs = Variable(imgs)
 
+            imgs_enc, _ = ae(imgs)
             g.zero_grad()
             # forward & backward & update params
             z.resize_(BS, Zdim, 1, 1).normal_(0, 1)
             zv = Variable(z)
             outputs = g(zv)
-            loss = criterion(outputs, imgs)
+            out_enc, _ = ae(outputs)
+            # loss = criterion(outputs, imgs)
+            loss = criterion(out_enc, imgs_enc)
             loss.backward()
             optimizer.step()
 
