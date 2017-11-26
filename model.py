@@ -5,57 +5,64 @@ import torch.nn.functional as F
 class Generator(nn.Module):
     def __init__(self, zdim, ch=1):
         super().__init__()
-        self.zdim = zdim
-        self.ch = ch
-        self.filters = 32
-        self.convt1 = nn.ConvTranspose2d(zdim, self.filters*4, 4, stride=1, padding=0, bias=False)
-        self.convt2 = nn.ConvTranspose2d(self.filters*4, self.filters*2, 4, stride=2, padding=1, bias=False)
-        self.convt3 = nn.ConvTranspose2d(self.filters*2, self.filters, 4, stride=2, padding=1, bias=False)
-        self.convt4 = nn.ConvTranspose2d(self.filters, self.ch, 4, stride=2, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(self.filters*4)
-        self.bn2 = nn.BatchNorm2d(self.filters*2)
-        self.bn3 = nn.BatchNorm2d(self.filters)
-        self.bn4 = nn.BatchNorm2d(self.ch)
-        self.d1 = nn.Dropout2d()
-        self.d2 = nn.Dropout2d()
-        self.d3 = nn.Dropout2d()
+        nf = 16
+        self.net = nn.Sequential(
+            nn.ConvTranspose2d(zdim, nf, 5, stride=1, padding=0), # (?,16, 5, 5)
+            # nn.BatchNorm2d(nf),
+            nn.ELU(),
+            nn.ConvTranspose2d(nf, nf*2, 5, stride=2, padding=0), # (?,32,13,13)
+            # nn.BatchNorm2d(nf),
+            nn.ELU(),
+            nn.ConvTranspose2d(nf*2, ch, 4, stride=2, padding=0), # (?, 1,28,28)
+            nn.Tanh()
+        )
 
     def forward(self, x):
-        x = F.leaky_relu(self.convt1(x))     # (?,zdim, 1, 1) => (?,128, 4, 4)
-        x = F.leaky_relu(self.convt2(x))     # (?, 128, 4, 4) => (?, 64, 8, 8)
-        x = F.leaky_relu(self.convt3(x))     # (?,  64, 8, 8) => (?, 32,16,16)
-        x = F.tanh(self.bn4(self.convt4(x))) # (?,  32,16,16) => (?, ch,32,32)
-        # x = F.leaky_relu(self.bn1(self.convt1(x))) # (?,zdim, 1, 1) => (?,128, 4, 4)
-        # x = F.leaky_relu(self.bn2(self.convt2(x))) # (?, 128, 4, 4) => (?, 64, 8, 8)
-        # x = F.leaky_relu(self.bn3(self.convt3(x))) # (?,  64, 8, 8) => (?, 32,16,16)
-        # x = F.tanh(self.bn4(self.convt4(x))) # (?,  32,16,16) => (?, ch,32,32)
-
-        return x
+        return self.net(x)
 
 class Generator01(nn.Module):
     def __init__(self, zdim, ch=1):
         super().__init__()
-        self.zdim = zdim
-        self.ch = ch
-        self.filters = 64
-        self.convt1 = nn.ConvTranspose2d(zdim, self.filters*4, 4, stride=1, padding=0, bias=False)
-        self.convt2 = nn.ConvTranspose2d(self.filters*4, self.filters*2, 4, stride=2, padding=1, bias=False)
-        self.convt3 = nn.ConvTranspose2d(self.filters*2, self.filters, 4, stride=2, padding=1, bias=False)
-        self.convt4 = nn.ConvTranspose2d(self.filters, self.ch, 4, stride=2, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(self.filters*4)
-        self.bn2 = nn.BatchNorm2d(self.filters*2)
-        self.bn3 = nn.BatchNorm2d(self.filters)
-        self.bn4 = nn.BatchNorm2d(self.ch)
-        self.d1 = nn.Dropout2d()
+        nf = 16
+        self.net = nn.Sequential(
+            nn.ConvTranspose2d(zdim, nf*2, 5, stride=1, padding=0), # (?,16, 5, 5)
+            # nn.BatchNorm2d(nf),
+            nn.ELU(),
+            nn.ConvTranspose2d(nf*2, nf, 5, stride=2, padding=0), # (?,32,13,13)
+            # nn.BatchNorm2d(nf*2),
+            nn.ELU(),
+            nn.ConvTranspose2d(nf, ch, 4, stride=2, padding=0), # (?, 1,28,28)
+            nn.Sigmoid()
+        )
 
     def forward(self, x):
-        # x = F.leaky_relu(self.convt1(x))  # (?,zdim, 1, 1) => (?,128, 4, 4)
-        # x = F.leaky_relu(self.convt2(x))  # (?, 128, 4, 4) => (?, 64, 8, 8)
-        # x = F.leaky_relu(self.convt3(x))  # (?,  64, 8, 8) => (?, 32,16,16)
-        # x = F.sigmoid(self.convt4(x))     # (?,  32,16,16) => (?, ch,32,32)
-        x = F.leaky_relu(self.bn1(self.convt1(x))) # (?,zdim, 1, 1) => (?,128, 4, 4)
-        x = F.leaky_relu(self.bn2(self.convt2(x))) # (?, 128, 4, 4) => (?, 64, 8, 8)
-        x = F.leaky_relu(self.bn3(self.convt3(x))) # (?,  64, 8, 8) => (?, 32,16,16)
-        x = F.sigmoid(self.bn4(self.convt4(x))) # (?,  32,16,16) => (?, ch,32,32)
-        return x
+        return self.net(x)
+
+class Autoencoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        ch = 1
+        nf = 16
+        k = 3
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, nf, k, 1, 1),
+            nn.ELU(),
+            nn.Conv2d(nf, nf//2, k, 2, 0),
+            nn.ELU(),
+            nn.Conv2d(nf//2, nf//4, k, 2, 0),
+            nn.ELU()
+        )
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(nf//4, nf//2, k, 2, 0),
+            nn.ELU(),
+            nn.ConvTranspose2d(nf//2, nf, k, 2, 0),
+            nn.ELU(),
+            nn.ConvTranspose2d(nf, ch, 4, 1, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        encoded = self.encoder(x)  # (?, nf//4, 6, 6)
+        decoded = self.decoder(encoded)
+        return encoded, decoded
 
