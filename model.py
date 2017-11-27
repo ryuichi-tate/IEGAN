@@ -26,10 +26,10 @@ class Generator01(nn.Module):
         nf = 16
         self.net = nn.Sequential(
             nn.ConvTranspose2d(zdim, nf*2, 5, stride=1, padding=0), # (?,16, 5, 5)
-            # nn.BatchNorm2d(nf),
+            nn.BatchNorm2d(nf*2),
             nn.ELU(),
             nn.ConvTranspose2d(nf*2, nf, 5, stride=2, padding=0), # (?,32,13,13)
-            # nn.BatchNorm2d(nf*2),
+            nn.BatchNorm2d(nf),
             nn.ELU(),
             nn.ConvTranspose2d(nf, ch, 4, stride=2, padding=0), # (?, 1,28,28)
             nn.Sigmoid()
