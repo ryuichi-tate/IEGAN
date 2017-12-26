@@ -18,8 +18,8 @@ parser.add_argument('--history', dest='history', action='store_true',
                     help='save loss history')
 parser.add_argument('--name', type=str, default='', metavar='NAME',
                     help='name of the output directories (default: None)')
-parser.add_argument('-t', '--threshold', type=int, default=1, metavar='T',
-                    help='param of threshold function (default: 1)')
+parser.add_argument('-t', '--threshold', type=int, default=0, metavar='T',
+                    help='param of threshold function (default: 0)')
 parser.set_defaults(history=False)
 
 opt = parser.parse_args()
@@ -50,25 +50,32 @@ import torchvision.utils as vutils
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
-from model import Generator, Generator01, Autoencoder
-from entropy_estimator import MQKLLoss
+from model import Generator, Autoencoder
+from entropy_estimator import MQKLLoss, MQSymKLLoss
 from utils import *
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        m.weight.data.normal_(0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
 
 def train():
-    g = Generator01(Zdim)
+    g = Generator(Zdim)
+    g.apply(weights_init)
+    print(g)
     # load pretrained Autoencoder
     ae = Autoencoder()
     ae.load_state_dict(torch.load('models/autoencoder.pth'))
 
     # custom loss function
     # ==========================
-    criterion = MQKLLoss(th=opt.threshold)
-
+    criterion = MQSymKLLoss(th=opt.threshold)
     # setup optimizer
     # ==========================
     optimizer = optim.Adam(g.parameters(), lr=opt.lr, weight_decay=opt.decay)
-
 
     z = torch.FloatTensor(BS, Zdim, 1, 1).normal_(0, 1)
     z_pred = torch.FloatTensor(64, Zdim, 1, 1).normal_(0, 1)
