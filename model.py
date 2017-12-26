@@ -3,27 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class Generator(nn.Module):
-    def __init__(self, zdim, ch=1):
+    def __init__(self, zdim, ch=1, nf=16):
         super().__init__()
-        nf = 16
-        self.net = nn.Sequential(
-            nn.ConvTranspose2d(zdim, nf, 5, stride=1, padding=0), # (?,16, 5, 5)
-            # nn.BatchNorm2d(nf),
-            nn.ELU(),
-            nn.ConvTranspose2d(nf, nf*2, 5, stride=2, padding=0), # (?,32,13,13)
-            # nn.BatchNorm2d(nf),
-            nn.ELU(),
-            nn.ConvTranspose2d(nf*2, ch, 4, stride=2, padding=0), # (?, 1,28,28)
-            nn.Tanh()
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-class Generator01(nn.Module):
-    def __init__(self, zdim, ch=1):
-        super().__init__()
-        nf = 16
         self.net = nn.Sequential(
             nn.ConvTranspose2d(zdim, nf*2, 5, stride=1, padding=0), # (?,16, 5, 5)
             nn.BatchNorm2d(nf*2),
