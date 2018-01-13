@@ -2,8 +2,8 @@
 import os
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('-g', '--gpu', type=str, default='0', metavar='GPU',
-                    help='set CUDA_VISIBLE_DEVICES (default: 0)')
+parser.add_argument('-g', '--gpu', type=str, default='-1', metavar='GPU',
+                    help='set CUDA_VISIBLE_DEVICES (default: -1)')
 parser.add_argument('-b', '--batch-size', type=int, default=32, metavar='N',
                     help='input batch size for training (default: 32)')
 parser.add_argument('-e', '--epochs', type=int, default=100, metavar='E',
@@ -13,25 +13,28 @@ parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
 parser.add_argument('--decay', type=float, default=0, metavar='D',
                     help='weight decay or L2 penalty (default: 0)')
 parser.add_argument('-z', '--zdim', type=int, default=100, metavar='Z',
-                    help='dimension of latent vector (default: 0.5)')
+                    help='dimension of latent vector (default: 100)')
 parser.add_argument('--history', dest='history', action='store_true',
                     help='save loss history')
 parser.add_argument('--name', type=str, default='', metavar='NAME',
                     help='name of the output directories (default: None)')
 parser.add_argument('-t', '--threshold', type=int, default=0, metavar='T',
                     help='param of threshold function (default: 0)')
+parser.add_argument('--ae', type=str, default=None, metavar='FILE',
+                    help='use Autoencoder as feature extraction (default: None)')
 parser.set_defaults(history=False)
 
 opt = parser.parse_args()
 
 # set params
 # ===============
-cuda = 1
+cuda = 0 if opt.gpu == -1 else 1
 os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 BS = opt.batch_size
 Zdim = opt.zdim
 opt.name = opt.name if opt.name == '' else '/'+opt.name
 IMAGE_PATH = 'images'+opt.name
+MODEL_PATH = 'models/'
 model_name = 'model' if opt.name == '' else opt.name
 MODEL_FULLPATH = 'models/'+model_name+'.pth'
 
@@ -67,8 +70,9 @@ def train():
     g.apply(weights_init)
     print(g)
     # load pretrained Autoencoder
-    ae = Autoencoder()
-    ae.load_state_dict(torch.load('models/autoencoder.pth'))
+    if opt.ae:
+        ae = Autoencoder()
+        ae.load_state_dict(torch.load(os.path.join(MODEL_PATH,opt.ae)))
 
     # custom loss function
     # ==========================
@@ -82,12 +86,15 @@ def train():
     # cuda
     if cuda:
         g.cuda()
-        ae.cuda()
         criterion.cuda()
         z, z_pred = z.cuda(), z_pred.cuda()
 
     z_pred = Variable(z_pred)
 
+    if opt.ae:
+        if cuda:
+            ae.cuda()
+        ae.eval()
     # load dataset
     # ==========================
     kwargs = dict(num_workers=1, pin_memory=True) if cuda else {}
@@ -104,7 +111,6 @@ def train():
         loss_history = np.empty(N*opt.epochs, dtype=np.float32)
     # train
     # ==========================
-    ae.eval()
     for epoch in range(opt.epochs):
         loss_mean = 0.0
         for i, (imgs, _) in enumerate(dataloader):
@@ -112,15 +118,17 @@ def train():
                 imgs = imgs.cuda()
             imgs = Variable(imgs)
 
-            imgs_enc, _ = ae(imgs)
             g.zero_grad()
             # forward & backward & update params
             z.resize_(BS, Zdim, 1, 1).normal_(0, 1)
             zv = Variable(z)
             outputs = g(zv)
-            out_enc, _ = ae(outputs)
-            # loss = criterion(outputs, imgs)
-            loss = criterion(out_enc, imgs_enc)
+            if opt.ae:
+                imgs_enc, _ = ae(imgs)
+                out_enc, _ = ae(outputs)
+                loss = criterion(out_enc, imgs_enc)
+            else:
+                loss = criterion(outputs, imgs)
             loss.backward()
             optimizer.step()
 

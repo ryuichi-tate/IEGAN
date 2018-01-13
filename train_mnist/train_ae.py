@@ -15,7 +15,7 @@ parser.add_argument('--decay', type=float, default=1e-5, metavar='D',
 parser.add_argument('--history', dest='history', action='store_true',
                     help='save loss history')
 parser.add_argument('--name', type=str, default='autoencoder', metavar='NAME',
-                    help='name of the output directories (default: autoencoder)')
+                    help='output filename (default: autoencoder)')
 parser.set_defaults(history=False)
 
 opt = parser.parse_args()

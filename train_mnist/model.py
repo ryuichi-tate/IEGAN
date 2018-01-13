@@ -23,22 +23,29 @@ class Autoencoder(nn.Module):
     def __init__(self):
         super().__init__()
         ch = 1
-        nf = 16
+        nf = 32
         k = 3
         self.encoder = nn.Sequential(
             nn.Conv2d(1, nf, k, 1, 1),
+            nn.BatchNorm2d(nf),
             nn.ELU(),
             nn.Conv2d(nf, nf//2, k, 2, 0),
+            nn.BatchNorm2d(nf//2),
             nn.ELU(),
             nn.Conv2d(nf//2, nf//4, k, 2, 0),
+            nn.BatchNorm2d(nf//4),
             nn.ELU(),
             nn.Conv2d(nf//4, 1, k, 1, 0)
         )
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(1, nf//4, 3, 1, 0),
+            nn.BatchNorm2d(nf//4),
+            nn.ELU(),
             nn.ConvTranspose2d(nf//4, nf//2, k, 2, 0),
+            nn.BatchNorm2d(nf//2),
             nn.ELU(),
             nn.ConvTranspose2d(nf//2, nf, k, 2, 0),
+            nn.BatchNorm2d(nf),
             nn.ELU(),
             nn.ConvTranspose2d(nf, ch, 4, 1, 1),
             nn.Sigmoid()
